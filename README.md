@@ -1,4 +1,4 @@
-# <img src="asset-lib/icon.png" alt="Godot Sparrow Icon" title="Godot Sparrow Icon" width=16 height=16> godot_sparrow
+# <img src="asset-lib/icon.png" alt="Godot Sparrow Icon" title="Godot Sparrow Icon" width=64 height=64> godot_sparrow
 
 A [Godot](https://godotengine.org) addon that adds a ResourceImporter for the [Sparrow Texture Atlas XML Format](https://wiki.sparrow-framework.org/manual/textures_and_images).
 
