@@ -3,11 +3,11 @@ class_name SparrowSpriteFrames extends EditorImportPlugin
 
 
 func _get_importer_name() -> String:
-	return 'com.what-is-a-git.godot-sparrow'
+	return 'com.what-is-a-git.godot-sparrow-importer'
 
 
 func _get_visible_name() -> String:
-	return 'Sparrow Atlas'
+	return 'SpriteFrames (Sparrow Atlas)'
 
 
 func _get_recognized_extensions() -> PackedStringArray:
@@ -111,13 +111,7 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 					xml.get_named_attribute_value_safe('frameHeight').to_int(),),)
 		frame.has_offsets = xml.has_attribute('frameX') and options.get('use_offsets', true)
 		
-		var frame_number: StringName = frame.name.right(4)
-		var animation_name: StringName = frame.name.left(frame.name.length() - 4)
-		
-		# By default we support animations with name0000, name0001, etc.
-		# We should still allow other sprites to be exported properly however.
-		if not frame_number.is_valid_int():
-			animation_name = frame.name
+		var frame_data: Array = _get_frame_name_and_number(frame)
 		
 		for cached_frame in frames_cache:
 			if cached_frame.source == frame.source and \
@@ -128,11 +122,15 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 		if frame.atlas == null:
 			frame.atlas = AtlasTexture.new()
 			
+			var rotated: bool = xml.get_named_attribute_value_safe('rotated') == 'true'
+			
 			# Just used to not have to reference frame 24/7.
 			var atlas: AtlasTexture = frame.atlas
 			atlas.atlas = texture
 			atlas.filter_clip = true
 			atlas.region = frame.source
+			
+			var margin: Rect2i = Rect2i(-1, -1, -1, -1)
 			
 			if frame.has_offsets:
 				if frame.offsets.size == Vector2i.ZERO:
@@ -142,19 +140,54 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 				var source: Rect2i = frame.source
 				var offsets: Rect2i = frame.offsets
 				
-				var margin: Rect2i = Rect2i(
+				margin = Rect2i(
 					-offsets.position.x, -offsets.position.y,
 					offsets.size.x - source.size.x, offsets.size.y - source.size.y)
 				
 				margin.size = margin.size.clamp(margin.position.abs(), Vector2i.MAX)
 				atlas.margin = margin
+			
+			if rotated:
+				var image: Image = atlas.get_image()
+				image.rotate_90(COUNTERCLOCKWISE)
+				
+				var image_texture: ImageTexture = ImageTexture.create_from_image(image)
+				
+				if margin != Rect2i(-1, -1, -1, -1):
+					# source is based on the frame, not the whole texture.
+					# This is because rotating the image messes with the offests,
+					# so we just recalculate the margins basically.
+					# :]
+					var source: Rect2i = Rect2(Vector2.ZERO, image_texture.get_size())
+					var offsets: Rect2i = frame.offsets
+					
+					atlas = AtlasTexture.new()
+					atlas.atlas = image_texture
+					atlas.region = source
+					
+					margin = Rect2i(
+						-offsets.position.x, -offsets.position.y,
+						offsets.size.x - source.size.x, offsets.size.y - source.size.y)
+					
+					atlas.margin = margin
+					
+					frame.atlas = atlas
+				else:
+					frame.atlas = image_texture
 		
-		if not frames.has_animation(animation_name):
-			frames.add_animation(animation_name)
-			frames.set_animation_loop(animation_name, options.get('animations_looped', false))
-			frames.set_animation_speed(animation_name, options.get('animation_framerate', 24))
+		frame.animation = frame_data[1]
 		
-		frames.add_frame(animation_name, frame.atlas)
+		if not frames.has_animation(frame.animation):
+			frames.add_animation(frame.animation)
+			frames.set_animation_loop(frame.animation, options.get('animations_looped', false))
+			frames.set_animation_speed(frame.animation, options.get('animation_framerate', 24))
+		
+		frames_cache.push_back(frame)
+	
+	frames_cache.sort_custom(_sort_frames)
+	
+	for frame in frames_cache:
+		frames.add_frame(frame.animation, frame.atlas)
 
 	var filename: StringName = &'%s.%s' % [save_path, _get_save_extension()]
 	
@@ -163,3 +196,21 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 		return ResourceSaver.save(frames, filename, ResourceSaver.FLAG_COMPRESS)
 	
 	return ResourceSaver.save(frames, filename, ResourceSaver.FLAG_COMPRESS)
+
+
+func _get_frame_name_and_number(frame: SparrowFrame) -> Array:
+	var frame_number: StringName = frame.name.right(4)
+	var animation_name: StringName = frame.name.left(frame.name.length() - 4)
+	
+	# By default we support animations with name0000, name0001, etc.
+	# We should still allow other sprites to be exported properly however.
+	if not frame_number.is_valid_int():
+		animation_name = frame.name
+	
+	return [frame_number.to_int() if frame_number.is_valid_int() else -1, animation_name]
+
+
+func _sort_frames(a_frame: SparrowFrame, b_frame: SparrowFrame) -> bool:
+	var a: Array = _get_frame_name_and_number(a_frame)
+	var b: Array = _get_frame_name_and_number(b_frame)
+	return a[0] < b[0]
