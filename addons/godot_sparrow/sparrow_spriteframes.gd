@@ -2,6 +2,9 @@
 class_name SparrowSpriteFrames extends EditorImportPlugin
 
 
+var sparrow_frame_class = preload('res://addons/godot_sparrow/sparrow_frame.gd')
+
+
 func _get_importer_name() -> String:
 	return 'com.what-is-a-git.godot-sparrow-importer'
 
@@ -54,20 +57,24 @@ func _get_option_visibility(path: String, option_name: StringName, options: Dict
 
 func _import(source_file: String, save_path: String, options: Dictionary, 
 		platform_variants: Array[String], gen_files: Array[String]) -> Error:
+	# This is done, because, the get_image function is fucking stupid sometimes.
+	# Thanks! :3
+	await RenderingServer.frame_pre_draw
+
 	if not FileAccess.file_exists(source_file):
 		return ERR_FILE_NOT_FOUND
 	
 	var xml: XMLParser = XMLParser.new()
 	xml.open(source_file)
 	
-	var frames: SpriteFrames = SpriteFrames.new()
-	frames.remove_animation('default')
+	var sprite_frames: SpriteFrames = SpriteFrames.new()
+	sprite_frames.remove_animation('default')
 	
-	var texture: Texture2D = null
+	var texture = null
 	
 	# This is done to prevent reuse of atlas textures.
 	# The actual difference this makes may be unnoticable but it is still done.
-	var frames_cache: Array[SparrowFrame] = []
+	var sparrow_frames: Array = []
 	
 	while xml.read() == OK:
 		if xml.get_node_type() != XMLParser.NODE_ELEMENT:
@@ -82,7 +89,6 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 			if not FileAccess.file_exists(image_path):
 				return ERR_FILE_NOT_FOUND
 			
-			# We need to ignore the cache to prevent potential issues with corrupted textures.
 			texture = ResourceLoader.load(image_path, 'CompressedTexture2D', ResourceLoader.CACHE_MODE_IGNORE)
 			continue
 		
@@ -92,13 +98,13 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 		# Couldn't find texture from imagePath in TextureAtlas.
 		if texture == null:
 			return ERR_FILE_MISSING_DEPENDENCIES
-		
-		var frame: SparrowFrame = SparrowFrame.new()
+
+		var frame = sparrow_frame_class.new()
 		frame.name = xml.get_named_attribute_value_safe('name')
-		
+
 		if frame.name == '':
 			continue
-		
+
 		frame.source = Rect2i(
 			Vector2i(xml.get_named_attribute_value_safe('x').to_int(),
 					xml.get_named_attribute_value_safe('y').to_int(),),
@@ -110,14 +116,14 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 			Vector2i(xml.get_named_attribute_value_safe('frameWidth').to_int(),
 					xml.get_named_attribute_value_safe('frameHeight').to_int(),),)
 		frame.has_offsets = xml.has_attribute('frameX') and options.get('use_offsets', true)
-		
+
 		var frame_data: Array = _get_frame_name_and_number(frame)
 		
-		for cached_frame in frames_cache:
-			if cached_frame.source == frame.source and \
-					cached_frame.offsets == frame.offsets:
-				frame = cached_frame
-		
+		for sparrow_frame in sparrow_frames:
+			if sparrow_frame.source == frame.source and \
+					sparrow_frame.offsets == frame.offsets:
+				frame = sparrow_frame
+
 		# Unique new frame! Awesome.
 		if frame.atlas == null:
 			frame.atlas = AtlasTexture.new()
@@ -152,7 +158,7 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 				image.rotate_90(COUNTERCLOCKWISE)
 				
 				var image_texture: ImageTexture = ImageTexture.create_from_image(image)
-				
+
 				if margin != Rect2i(-1, -1, -1, -1):
 					# source is based on the frame, not the whole texture.
 					# This is because rotating the image messes with the offests,
@@ -160,45 +166,44 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 					# :]
 					var source: Rect2i = Rect2(Vector2.ZERO, image_texture.get_size())
 					var offsets: Rect2i = frame.offsets
-					
+
 					atlas = AtlasTexture.new()
 					atlas.atlas = image_texture
 					atlas.region = source
-					
+
 					margin = Rect2i(
 						-offsets.position.x, -offsets.position.y,
 						offsets.size.x - source.size.x, offsets.size.y - source.size.y)
 					
 					atlas.margin = margin
-					
 					frame.atlas = atlas
 				else:
 					frame.atlas = image_texture
 		
 		frame.animation = frame_data[1]
 		
-		if not frames.has_animation(frame.animation):
-			frames.add_animation(frame.animation)
-			frames.set_animation_loop(frame.animation, options.get('animations_looped', false))
-			frames.set_animation_speed(frame.animation, options.get('animation_framerate', 24))
+		if not sprite_frames.has_animation(frame.animation):
+			sprite_frames.add_animation(frame.animation)
+			sprite_frames.set_animation_loop(frame.animation, options.get('animations_looped', false))
+			sprite_frames.set_animation_speed(frame.animation, options.get('animation_framerate', 24))
 		
-		frames_cache.push_back(frame)
+		sparrow_frames.push_back(frame)
 	
-	frames_cache.sort_custom(_sort_frames)
-	
-	for frame in frames_cache:
-		frames.add_frame(frame.animation, frame.atlas)
+	sparrow_frames.sort_custom(_sort_frames)
+
+	for frame in sparrow_frames:
+		sprite_frames.add_frame(frame.animation, frame.atlas)
 
 	var filename: StringName = &'%s.%s' % [save_path, _get_save_extension()]
-	
+
 	if options.get('store_external_spriteframes', false):
 		filename = &'%s.%s' % [source_file.get_basename(), _get_save_extension()]
-		return ResourceSaver.save(frames, filename, ResourceSaver.FLAG_COMPRESS)
-	
-	return ResourceSaver.save(frames, filename, ResourceSaver.FLAG_COMPRESS)
+		return ResourceSaver.save(sprite_frames, filename, ResourceSaver.FLAG_COMPRESS)
+
+	return ResourceSaver.save(sprite_frames, filename, ResourceSaver.FLAG_COMPRESS)
 
 
-func _get_frame_name_and_number(frame: SparrowFrame) -> Array:
+func _get_frame_name_and_number(frame) -> Array:
 	var frame_number: StringName = frame.name.right(4)
 	var animation_name: StringName = frame.name.left(frame.name.length() - 4)
 	
@@ -210,7 +215,7 @@ func _get_frame_name_and_number(frame: SparrowFrame) -> Array:
 	return [frame_number.to_int() if frame_number.is_valid_int() else -1, animation_name]
 
 
-func _sort_frames(a_frame: SparrowFrame, b_frame: SparrowFrame) -> bool:
+func _sort_frames(a_frame, b_frame) -> bool:
 	var a: Array = _get_frame_name_and_number(a_frame)
 	var b: Array = _get_frame_name_and_number(b_frame)
 	return a[0] < b[0]
