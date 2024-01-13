@@ -71,6 +71,8 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 	sprite_frames.remove_animation('default')
 	
 	var texture = null
+	var image: Image
+	var image_texture: ImageTexture
 	
 	# This is done to prevent reuse of atlas textures.
 	# The actual difference this makes may be unnoticable but it is still done.
@@ -90,6 +92,10 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 				return ERR_FILE_NOT_FOUND
 			
 			texture = ResourceLoader.load(image_path, 'CompressedTexture2D', ResourceLoader.CACHE_MODE_IGNORE)
+			
+			image = texture.get_image()
+			image.decompress()
+			image_texture = ImageTexture.create_from_image(image)
 			continue
 		
 		if node_name != 'subtexture':
@@ -132,7 +138,7 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 			
 			# Just used to not have to reference frame 24/7.
 			var atlas: AtlasTexture = frame.atlas
-			atlas.atlas = texture
+			atlas.atlas = image_texture
 			atlas.filter_clip = true
 			atlas.region = frame.source
 			
@@ -154,21 +160,21 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 				atlas.margin = margin
 			
 			if rotated:
-				var image: Image = atlas.get_image()
-				image.rotate_90(COUNTERCLOCKWISE)
+				var atlas_image: Image = atlas.get_image()
+				atlas_image.rotate_90(COUNTERCLOCKWISE)
 				
-				var image_texture: ImageTexture = ImageTexture.create_from_image(image)
+				var atlas_texture: ImageTexture = ImageTexture.create_from_image(atlas_image)
 
 				if margin != Rect2i(-1, -1, -1, -1):
 					# source is based on the frame, not the whole texture.
 					# This is because rotating the image messes with the offests,
 					# so we just recalculate the margins basically.
 					# :]
-					var source: Rect2i = Rect2(Vector2.ZERO, image_texture.get_size())
+					var source: Rect2i = Rect2(Vector2.ZERO, atlas_texture.get_size())
 					var offsets: Rect2i = frame.offsets
 
 					atlas = AtlasTexture.new()
-					atlas.atlas = image_texture
+					atlas.atlas = atlas_texture
 					atlas.region = source
 
 					margin = Rect2i(
@@ -178,7 +184,7 @@ func _import(source_file: String, save_path: String, options: Dictionary,
 					atlas.margin = margin
 					frame.atlas = atlas
 				else:
-					frame.atlas = image_texture
+					frame.atlas = atlas_texture
 		
 		frame.animation = frame_data[1]
 		
